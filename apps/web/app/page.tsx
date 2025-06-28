@@ -1,12 +1,16 @@
-import { Button } from "@workspace/ui/components/button"
+import Navigation from "@/components/Navigation";
+import PatientCard from "@/components/PatientCard";
 
 export default function Page() {
   return (
-    <div className="flex items-center justify-center min-h-svh">
-      <div className="flex flex-col items-center justify-center gap-4">
-        <h1 className="text-2xl font-bold">Hello World</h1>
-        <Button size="sm">Button</Button>
+    <>
+      <Navigation />
+      <div className="max-w-6xl mx-auto grid grid-cols-1 place-items-center md:grid-cols-4 gap-5 pt-12">
+        <PatientCard />
+        <PatientCard />
+        <PatientCard />
+        <PatientCard />
       </div>
-    </div>
-  )
+    </>
+  );
 }
