@@ -22,78 +22,304 @@ import {
   UserCircle,
   AlertTriangle,
   Clock,
+  Loader2,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import axios from "axios";
 
 interface Message {
-  id: number;
-  type: "bot" | "user";
-  content: string;
-  timestamp: Date | null;
+  id?: number;
+  msg_content: string;
+  msg_type: "bot" | "user";
+  chat_session_msgs: string; // session ID
+  timestamp?: string;
+  date_created?: string;
 }
 
 interface PageProps {
   params: Promise<{ id: string }>;
 }
 
+interface SessionData {
+  sessionId?: string;
+  id?: string;
+}
+
+const DIRECTUS_URL = "https://eriq.onrender.com";
+const WS_URL = "wss://eriq.onrender.com/websocket";
+
 export default function Page({ params }: PageProps) {
   const router = useRouter();
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 1,
-      type: "bot",
-      content:
-        "Hello! I'm your AI Triage Assistant. I'll help you assess this patient's condition. Let's start with basic information.",
-      timestamp: null,
-    },
-    {
-      id: 2,
-      type: "bot",
-      content: "Could you please provide the patient's age and gender?",
-      timestamp: null,
-    },
-  ]);
-
-  // Initialize timestamps on client side only
-  useEffect(() => {
-    const now = Date.now();
-    setMessages((prev: Message[]) =>
-      prev.map((msg: Message, index: number) => ({
-        ...msg,
-        timestamp:
-          msg.timestamp || new Date(now - (prev.length - index) * 1000),
-      }))
-    );
-  }, []);
-
+  const [patientId, setPatientId] = useState<string>("");
+  const [doctorId, setDoctorId] = useState<string>("");
+  const [sessionData, setSessionData] = useState<SessionData | null>(null);
+  const [isLoadingSession, setIsLoadingSession] = useState<boolean>(true);
+  const [sessionError, setSessionError] = useState<string>("");
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState<string>("");
   const [isTyping, setIsTyping] = useState<boolean>(false);
+  const [isConnected, setIsConnected] = useState<boolean>(false);
 
-  const handleSendMessage = (): void => {
-    if (!inputValue.trim()) return;
+  const wsRef = useRef<WebSocket | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    const newMessage: Message = {
-      id: messages.length + 1,
-      type: "user",
-      content: inputValue,
-      timestamp: new Date(),
+  // Scroll to bottom when new messages arrive
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  // Initialize WebSocket connection
+  const initializeWebSocket = (sessionId: string) => {
+    try {
+      const ws = new WebSocket(WS_URL);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log("WebSocket connected");
+        setIsConnected(true);
+
+        // Subscribe to the msgs collection for this session
+        ws.send(
+          JSON.stringify({
+            type: "subscribe",
+            collection: "msgs",
+            query: {
+              filter: {
+                chat_session_msgs: {
+                  _eq: sessionId,
+                },
+              },
+            },
+          })
+        );
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        console.log("WebSocket message received:", data);
+
+        if (data.type === "subscription" && data.event === "create") {
+          // New message created
+          const newMessage = data.data[0];
+          setMessages((prev) => {
+            // Avoid duplicates
+            if (prev.some((msg) => msg.id === newMessage.id)) {
+              return prev;
+            }
+            return [...prev, newMessage].sort(
+              (a, b) =>
+                new Date(a.date_created || 0).getTime() -
+                new Date(b.date_created || 0).getTime()
+            );
+          });
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error("WebSocket error:", error);
+        setIsConnected(false);
+      };
+
+      ws.onclose = () => {
+        console.log("WebSocket disconnected");
+        setIsConnected(false);
+
+        // Attempt to reconnect after 3 seconds
+        setTimeout(() => {
+          if (sessionId) {
+            initializeWebSocket(sessionId);
+          }
+        }, 3000);
+      };
+    } catch (error) {
+      console.error("Failed to initialize WebSocket:", error);
+      setIsConnected(false);
+    }
+  };
+
+  // Load existing messages for the session
+  const loadExistingMessages = async (sessionId: string) => {
+    try {
+      const response = await axios.get(
+        `${DIRECTUS_URL}/items/msgs?filter[chat_session_msgs][_eq]=${sessionId}&sort=date_created`,
+        {
+          headers: { "Content-Type": "application/json" },
+          withCredentials: true,
+        }
+      );
+
+      setMessages(response.data.data || []);
+
+      // If no messages exist, add initial bot messages
+      if (!response.data.data || response.data.data.length === 0) {
+        await sendInitialMessages(sessionId);
+      }
+    } catch (error) {
+      console.error("Error loading messages:", error);
+      // Add initial messages if loading fails
+      await sendInitialMessages(sessionId);
+    }
+  };
+
+  // Send initial bot messages
+  const sendInitialMessages = async (sessionId: string) => {
+    const initialMessages = [
+      {
+        msg_content:
+          "Hello! I'm your AI Triage Assistant. I'll help you assess this patient's condition. Let's start with basic information.",
+        msg_type: "bot" as const,
+        chat_session_msgs: sessionId,
+      },
+      {
+        msg_content: "Could you please provide the patient's age and gender?",
+        msg_type: "bot" as const,
+        chat_session_msgs: sessionId,
+      },
+    ];
+
+    for (const message of initialMessages) {
+      try {
+        await axios.post(`${DIRECTUS_URL}/items/msgs`, message, {
+          headers: { "Content-Type": "application/json" },
+          withCredentials: true,
+        });
+      } catch (error) {
+        console.error("Error sending initial message:", error);
+      }
+    }
+  };
+
+  // Extract patient_id and doctor_id from URL and create session
+  useEffect(() => {
+    const initializeSession = async () => {
+      try {
+        const resolvedParams = await params;
+        const routeId = resolvedParams.id;
+
+        // Split the route ID to extract patient_id and doctor_id
+        const ids = routeId.split("-");
+
+        if (ids.length < 8) {
+          throw new Error("Invalid route format");
+        }
+
+        // Reconstruct the UUIDs
+        const patientUUID = ids.slice(0, 5).join("-");
+        const doctorUUID = ids.slice(5, 10).join("-");
+
+        setPatientId(patientUUID);
+        setDoctorId(doctorUUID);
+
+        // Create session with the API
+        const response = await axios.post(
+          `${DIRECTUS_URL}/items/chat_session`,
+          {
+            doctor_chat_session: doctorUUID,
+            patient_chat_session: patientUUID,
+          },
+          {
+            headers: { "Content-Type": "application/json" },
+            withCredentials: true,
+          }
+        );
+
+        const sessionInfo = response.data.data || response.data;
+        setSessionData(sessionInfo);
+
+        const sessionId = sessionInfo.id || sessionInfo.sessionId;
+        console.log("Session created successfully:", sessionInfo);
+
+        // Initialize WebSocket and load messages
+        if (sessionId) {
+          await loadExistingMessages(sessionId);
+          initializeWebSocket(sessionId);
+        }
+      } catch (error) {
+        console.error("Error creating session:", error);
+        setSessionError(
+          error instanceof Error ? error.message : "Failed to create session"
+        );
+      } finally {
+        setIsLoadingSession(false);
+      }
     };
 
-    setMessages((prev: Message[]) => [...prev, newMessage]);
-    setInputValue("");
+    initializeSession();
 
-    // Simulate AI response
-    setTimeout(() => {
-      const aiResponse: Message = {
-        id: messages.length + 2,
-        type: "bot",
-        content: generateAIResponse(inputValue),
-        timestamp: new Date(),
-      };
-      setMessages((prev: Message[]) => [...prev, aiResponse]);
+    // Cleanup WebSocket on unmount
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, [params]);
+
+  // Send message to Directus
+  const sendMessageToDirectus = async (
+    content: string,
+    type: "user" | "bot"
+  ) => {
+    if (!sessionData?.id && !sessionData?.sessionId) {
+      console.error("No session ID available");
+      return;
+    }
+
+    const sessionId = sessionData.id || sessionData.sessionId;
+
+    try {
+      const response = await axios.post(
+        `${DIRECTUS_URL}/items/msgs`,
+        {
+          msg_content: content,
+          msg_type: type,
+          chat_session_msgs: sessionId,
+        },
+        {
+          headers: { "Content-Type": "application/json" },
+          withCredentials: true,
+        }
+      );
+
+      console.log("Message sent successfully:", response.data);
+      return response.data.data;
+    } catch (error) {
+      console.error("Error sending message:", error);
+      throw error;
+    }
+  };
+
+  const handleSendMessage = async (): Promise<void> => {
+    if (!inputValue.trim() || !sessionData || isTyping) return;
+
+    const currentInput = inputValue;
+    setInputValue("");
+    setIsTyping(true);
+
+    try {
+      // Send user message
+      await sendMessageToDirectus(currentInput, "user");
+
+      // Simulate AI processing time
+      setTimeout(async () => {
+        try {
+          const aiResponse = generateAIResponse(currentInput);
+          await sendMessageToDirectus(aiResponse, "bot");
+        } catch (error) {
+          console.error("Error sending AI response:", error);
+        }
+        setIsTyping(false);
+      }, 1500);
+    } catch (error) {
+      console.error("Error sending message:", error);
       setIsTyping(false);
-    }, 1500);
+      // Add message back to input if sending failed
+      setInputValue(currentInput);
+    }
   };
 
   const generateAIResponse = (userInput: string): string => {
@@ -111,9 +337,9 @@ export default function Page({ params }: PageProps) {
     );
   };
 
-  const formatTime = (timestamp: Date | null): string => {
+  const formatTime = (timestamp: string | undefined): string => {
     if (!timestamp) return "";
-    return timestamp.toLocaleTimeString([], {
+    return new Date(timestamp).toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
     });
@@ -131,8 +357,65 @@ export default function Page({ params }: PageProps) {
   };
 
   const handleUserClick = () => {
-    router.push("/user/1"); // Navigate to user page with ID 1
+    router.push(`/user/${patientId}`);
   };
+
+  // Show loading state while creating session
+  if (isLoadingSession) {
+    return (
+      <SidebarProvider
+        style={
+          {
+            "--sidebar-width": "350px",
+          } as React.CSSProperties
+        }
+      >
+        <AppSidebar />
+        <SidebarInset>
+          <div className="flex items-center justify-center h-screen">
+            <div className="text-center">
+              <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
+              <p className="text-gray-600 dark:text-gray-400">
+                Creating session and connecting...
+              </p>
+            </div>
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
+    );
+  }
+
+  // Show error state if session creation failed
+  if (sessionError) {
+    return (
+      <SidebarProvider
+        style={
+          {
+            "--sidebar-width": "350px",
+          } as React.CSSProperties
+        }
+      >
+        <AppSidebar />
+        <SidebarInset>
+          <div className="flex items-center justify-center h-screen">
+            <div className="text-center">
+              <AlertTriangle className="h-8 w-8 mx-auto mb-4 text-red-600" />
+              <p className="text-red-600 mb-4">Failed to create session</p>
+              <p className="text-gray-600 dark:text-gray-400 text-sm">
+                {sessionError}
+              </p>
+              <button
+                onClick={() => window.location.reload()}
+                className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
+    );
+  }
 
   return (
     <SidebarProvider
@@ -151,7 +434,7 @@ export default function Page({ params }: PageProps) {
             className="mr-2 data-[orientation=vertical]:h-4 bg-gray-200 dark:bg-gray-700"
           />
           <div className="flex items-center space-x-3">
-            <div 
+            <div
               className="bg-blue-100 dark:bg-blue-900/50 p-2 rounded-full cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800/70 transition-colors"
               onClick={handleUserClick}
             >
@@ -164,12 +447,29 @@ export default function Page({ params }: PageProps) {
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 Patient Assessment in Progress
               </p>
+              {/* Display session info for debugging */}
+              <p className="text-xs text-gray-400">
+                Patient: {patientId.slice(0, 8)}... | Doctor:{" "}
+                {doctorId.slice(0, 8)}...
+              </p>
             </div>
           </div>
           <div className="ml-auto flex items-center space-x-2">
-            <div className="bg-green-100 dark:bg-green-900/50 px-3 py-1 rounded-full">
-              <span className="text-green-800 dark:text-green-300 text-sm font-medium">
-                Active Session
+            <div
+              className={`px-3 py-1 rounded-full ${
+                isConnected
+                  ? "bg-green-100 dark:bg-green-900/50"
+                  : "bg-red-100 dark:bg-red-900/50"
+              }`}
+            >
+              <span
+                className={`text-sm font-medium ${
+                  isConnected
+                    ? "text-green-800 dark:text-green-300"
+                    : "text-red-800 dark:text-red-300"
+                }`}
+              >
+                {isConnected ? "Connected" : "Connecting..."}
               </span>
             </div>
           </div>
@@ -182,19 +482,21 @@ export default function Page({ params }: PageProps) {
             {messages.map((message: Message) => (
               <div
                 key={message.id}
-                className={`flex items-start space-x-3 ${message.type === "user"
+                className={`flex items-start space-x-3 ${
+                  message.msg_type === "user"
                     ? "flex-row-reverse space-x-reverse"
                     : ""
-                  }`}
+                }`}
               >
                 {/* Avatar */}
                 <div
-                  className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${message.type === "bot"
+                  className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                    message.msg_type === "bot"
                       ? "bg-blue-100 dark:bg-blue-900/60"
                       : "bg-gray-100 dark:bg-gray-700"
-                    }`}
+                  }`}
                 >
-                  {message.type === "bot" ? (
+                  {message.msg_type === "bot" ? (
                     <Bot className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                   ) : (
                     <UserCircle className="h-4 w-4 text-gray-600 dark:text-gray-300" />
@@ -203,25 +505,52 @@ export default function Page({ params }: PageProps) {
 
                 {/* Message Content */}
                 <div
-                  className={`max-w-[70%] ${message.type === "user" ? "text-right" : "text-left"
-                    }`}
+                  className={`max-w-[70%] ${
+                    message.msg_type === "user" ? "text-right" : "text-left"
+                  }`}
                 >
                   <div
-                    className={`rounded-lg px-4 py-2 transition-colors ${message.type === "bot"
+                    className={`rounded-lg px-4 py-2 transition-colors ${
+                      message.msg_type === "bot"
                         ? "bg-white dark:bg-[#1e293b] text-gray-900 dark:text-gray-100 shadow-sm dark:shadow-gray-900/20"
                         : "bg-blue-600 dark:bg-blue-700 text-white dark:text-blue-50"
-                      }`}
+                    }`}
                   >
                     <p className="text-sm whitespace-pre-wrap">
-                      {message.content}
+                      {message.msg_content}
                     </p>
                   </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    {formatTime(message.timestamp)}
+                    {formatTime(message.date_created)}
                   </p>
                 </div>
               </div>
             ))}
+
+            {/* Typing indicator */}
+            {isTyping && (
+              <div className="flex items-start space-x-3">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-blue-100 dark:bg-blue-900/60">
+                  <Bot className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="bg-white dark:bg-[#1e293b] rounded-lg px-4 py-2 shadow-sm dark:shadow-gray-900/20">
+                  <div className="flex space-x-1">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                    <div
+                      className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                      style={{ animationDelay: "0.1s" }}
+                    ></div>
+                    <div
+                      className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                      style={{ animationDelay: "0.2s" }}
+                    ></div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Scroll anchor */}
+            <div ref={messagesEndRef} />
           </div>
 
           {/* Input Area */}
@@ -237,11 +566,14 @@ export default function Page({ params }: PageProps) {
                   placeholder="Enter patient details, symptoms, vital signs..."
                   className="w-full resize-none border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[44px] max-h-32 bg-white dark:bg-[#1e293b] text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 transition-colors"
                   rows={1}
+                  disabled={!sessionData || !isConnected}
                 />
               </div>
               <button
                 onClick={handleSendMessage}
-                disabled={!inputValue.trim() || isTyping}
+                disabled={
+                  !inputValue.trim() || isTyping || !sessionData || !isConnected
+                }
                 className="bg-blue-600 dark:bg-blue-700 text-white p-2 rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <Send className="h-5 w-5" />
@@ -255,6 +587,7 @@ export default function Page({ params }: PageProps) {
                   setQuickMessage("Patient is experiencing chest pain")
                 }
                 className="px-3 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                disabled={!sessionData || !isConnected}
               >
                 Chest Pain
               </button>
@@ -263,12 +596,14 @@ export default function Page({ params }: PageProps) {
                   setQuickMessage("High fever and difficulty breathing")
                 }
                 className="px-3 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                disabled={!sessionData || !isConnected}
               >
                 Respiratory Issues
               </button>
               <button
                 onClick={() => setQuickMessage("Severe abdominal pain")}
                 className="px-3 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                disabled={!sessionData || !isConnected}
               >
                 Abdominal Pain
               </button>
@@ -277,6 +612,7 @@ export default function Page({ params }: PageProps) {
                   setQuickMessage("Patient fell and may have fracture")
                 }
                 className="px-3 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                disabled={!sessionData || !isConnected}
               >
                 Trauma/Injury
               </button>
