@@ -24,6 +24,7 @@ import {
   Clock,
 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 interface Message {
   id: number;
@@ -37,6 +38,7 @@ interface PageProps {
 }
 
 export default function Page({ params }: PageProps) {
+  const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 1,
@@ -128,6 +130,10 @@ export default function Page({ params }: PageProps) {
     setInputValue(message);
   };
 
+  const handleUserClick = () => {
+    router.push("/user/1"); // Navigate to user page with ID 1
+  };
+
   return (
     <SidebarProvider
       style={
@@ -138,28 +144,31 @@ export default function Page({ params }: PageProps) {
     >
       <AppSidebar />
       <SidebarInset>
-        <header className="bg-background sticky top-0 flex shrink-0 items-center gap-2 border-b p-4 z-10">
-          <SidebarTrigger className="-ml-1" />
+        <header className="bg-background sticky top-0 flex shrink-0 items-center gap-2 border-b border-gray-200 dark:border-gray-800 p-4 z-10 bg-white dark:bg-[#0f172a] transition-colors">
+          <SidebarTrigger className="-ml-1 text-gray-600 dark:text-gray-300" />
           <Separator
             orientation="vertical"
-            className="mr-2 data-[orientation=vertical]:h-4"
+            className="mr-2 data-[orientation=vertical]:h-4 bg-gray-200 dark:bg-gray-700"
           />
           <div className="flex items-center space-x-3">
-            <div className="bg-blue-100 p-2 rounded-full">
-              <User className="h-5 w-5 text-blue-600" />
+            <div 
+              className="bg-blue-100 dark:bg-blue-900/50 p-2 rounded-full cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800/70 transition-colors"
+              onClick={handleUserClick}
+            >
+              <User className="h-5 w-5 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">
+              <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
                 Priyangsu Banik
               </h1>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 Patient Assessment in Progress
               </p>
             </div>
           </div>
           <div className="ml-auto flex items-center space-x-2">
-            <div className="bg-green-100 px-3 py-1 rounded-full">
-              <span className="text-green-800 text-sm font-medium">
+            <div className="bg-green-100 dark:bg-green-900/50 px-3 py-1 rounded-full">
+              <span className="text-green-800 dark:text-green-300 text-sm font-medium">
                 Active Session
               </span>
             </div>
@@ -169,7 +178,7 @@ export default function Page({ params }: PageProps) {
         {/* Chat UI */}
         <div className="flex flex-1 flex-col h-[calc(100vh-80px)]">
           {/* Messages Container */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-white dark:bg-[#10172a] transition-colors">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 dark:bg-[#0f172a] transition-colors">
             {messages.map((message: Message) => (
               <div
                 key={message.id}
@@ -181,12 +190,12 @@ export default function Page({ params }: PageProps) {
                 {/* Avatar */}
                 <div
                   className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${message.type === "bot"
-                      ? "bg-blue-100 dark:bg-blue-900"
-                      : "bg-gray-100 dark:bg-gray-800"
+                      ? "bg-blue-100 dark:bg-blue-900/60"
+                      : "bg-gray-100 dark:bg-gray-700"
                     }`}
                 >
                   {message.type === "bot" ? (
-                    <Bot className="h-4 w-4 text-blue-600 dark:text-blue-300" />
+                    <Bot className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                   ) : (
                     <UserCircle className="h-4 w-4 text-gray-600 dark:text-gray-300" />
                   )}
@@ -199,8 +208,8 @@ export default function Page({ params }: PageProps) {
                 >
                   <div
                     className={`rounded-lg px-4 py-2 transition-colors ${message.type === "bot"
-                        ? "bg-gray-100 text-gray-900 dark:bg-[#1e293b] dark:text-gray-100"
-                        : "bg-blue-600 text-white dark:bg-blue-700"
+                        ? "bg-white dark:bg-[#1e293b] text-gray-900 dark:text-gray-100 shadow-sm dark:shadow-gray-900/20"
+                        : "bg-blue-600 dark:bg-blue-700 text-white dark:text-blue-50"
                       }`}
                   >
                     <p className="text-sm whitespace-pre-wrap">
@@ -216,7 +225,7 @@ export default function Page({ params }: PageProps) {
           </div>
 
           {/* Input Area */}
-          <div className="border-t bg-white dark:bg-[#10172a] dark:border-gray-800 p-4 transition-colors">
+          <div className="border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-[#0f172a] p-4 transition-colors">
             <div className="flex items-end space-x-3">
               <div className="flex-1">
                 <textarea
@@ -226,14 +235,14 @@ export default function Page({ params }: PageProps) {
                   }
                   onKeyDown={handleKeyDown}
                   placeholder="Enter patient details, symptoms, vital signs..."
-                  className="w-full resize-none border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[44px] max-h-32 bg-white dark:bg-[#1e293b] text-gray-900 dark:text-gray-100 transition-colors"
+                  className="w-full resize-none border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[44px] max-h-32 bg-white dark:bg-[#1e293b] text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 transition-colors"
                   rows={1}
                 />
               </div>
               <button
                 onClick={handleSendMessage}
                 disabled={!inputValue.trim() || isTyping}
-                className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="bg-blue-600 dark:bg-blue-700 text-white p-2 rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <Send className="h-5 w-5" />
               </button>
@@ -245,7 +254,7 @@ export default function Page({ params }: PageProps) {
                 onClick={() =>
                   setQuickMessage("Patient is experiencing chest pain")
                 }
-                className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 transition-colors"
+                className="px-3 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
               >
                 Chest Pain
               </button>
@@ -253,13 +262,13 @@ export default function Page({ params }: PageProps) {
                 onClick={() =>
                   setQuickMessage("High fever and difficulty breathing")
                 }
-                className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 transition-colors"
+                className="px-3 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
               >
                 Respiratory Issues
               </button>
               <button
                 onClick={() => setQuickMessage("Severe abdominal pain")}
-                className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 transition-colors"
+                className="px-3 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
               >
                 Abdominal Pain
               </button>
@@ -267,7 +276,7 @@ export default function Page({ params }: PageProps) {
                 onClick={() =>
                   setQuickMessage("Patient fell and may have fracture")
                 }
-                className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 transition-colors"
+                className="px-3 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
               >
                 Trauma/Injury
               </button>
