@@ -1,5 +1,4 @@
 "use client";
-
 import { AppSidebar } from "@/components/app-sidebar";
 import {
   Breadcrumb,
@@ -29,11 +28,10 @@ import { useRouter } from "next/navigation";
 import axios from "axios";
 
 interface Message {
-  id?: number;
+  msg_id?: number;
   msg_content: string;
-  msg_type: "bot" | "user";
+  msg_type: "ai_response" | "user_prompt";
   chat_session_msgs: string; // session ID
-  timestamp?: string;
   date_created?: string;
 }
 
@@ -42,7 +40,7 @@ interface PageProps {
 }
 
 interface SessionData {
-  sessionId?: string;
+  session_id?: string;
   id?: string;
 }
 
@@ -60,7 +58,6 @@ export default function Page({ params }: PageProps) {
   const [inputValue, setInputValue] = useState<string>("");
   const [isTyping, setIsTyping] = useState<boolean>(false);
   const [isConnected, setIsConnected] = useState<boolean>(false);
-
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -74,14 +71,19 @@ export default function Page({ params }: PageProps) {
   }, [messages]);
 
   // Initialize WebSocket connection
-  const initializeWebSocket = (sessionId: string) => {
+  const initializeWebSocket = (session_id: string) => {
     try {
+      console.log("Attempting to connect to WebSocket:", WS_URL);
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        console.log("WebSocket connected");
+        console.log("WebSocket open");
         setIsConnected(true);
+        ws.send(JSON.stringify({
+          type: 'auth',
+          access_token: "5Z0uTo5c3CysEUcHPzgpCy-qpgvxhxNG"
+        }));
 
         // Subscribe to the msgs collection for this session
         ws.send(
@@ -91,7 +93,7 @@ export default function Page({ params }: PageProps) {
             query: {
               filter: {
                 chat_session_msgs: {
-                  _eq: sessionId,
+                  _eq: session_id,
                 },
               },
             },
@@ -99,42 +101,46 @@ export default function Page({ params }: PageProps) {
         );
       };
 
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        console.log("WebSocket message received:", data);
-
-        if (data.type === "subscription" && data.event === "create") {
-          // New message created
-          const newMessage = data.data[0];
-          setMessages((prev) => {
-            // Avoid duplicates
-            if (prev.some((msg) => msg.id === newMessage.id)) {
-              return prev;
-            }
-            return [...prev, newMessage].sort(
-              (a, b) =>
-                new Date(a.date_created || 0).getTime() -
-                new Date(b.date_created || 0).getTime()
-            );
-          });
-        }
-      };
-
       ws.onerror = (error) => {
         console.error("WebSocket error:", error);
         setIsConnected(false);
       };
 
-      ws.onclose = () => {
-        console.log("WebSocket disconnected");
+      ws.onclose = (event) => {
+        console.warn("WebSocket closed:", event);
         setIsConnected(false);
-
         // Attempt to reconnect after 3 seconds
         setTimeout(() => {
-          if (sessionId) {
-            initializeWebSocket(sessionId);
+          if (session_id) {
+            initializeWebSocket(session_id);
           }
         }, 3000);
+      };
+
+      ws.onmessage = (event) => {
+        console.log("WebSocket message:", event.data);
+        try {
+          const data = JSON.parse(event.data);
+          console.log("WebSocket message received:", data);
+
+          if (data.type === "subscription" && data.event === "create") {
+            // New message created
+            const newMessage = data.data[0];
+            setMessages((prev) => {
+              // Avoid duplicates
+              if (prev.some((msg) => msg.msg_id === newMessage.msg_id)) {
+                return prev;
+              }
+              return [...prev, newMessage].sort(
+                (a, b) =>
+                  new Date(a.date_created || 0).getTime() -
+                  new Date(b.date_created || 0).getTime()
+              );
+            });
+          }
+        } catch (parseError) {
+          console.error("Error parsing WebSocket message:", parseError);
+        }
       };
     } catch (error) {
       console.error("Failed to initialize WebSocket:", error);
@@ -143,42 +149,41 @@ export default function Page({ params }: PageProps) {
   };
 
   // Load existing messages for the session
-  const loadExistingMessages = async (sessionId: string) => {
+  const loadExistingMessages = async (session_id: string) => {
     try {
       const response = await axios.get(
-        `${DIRECTUS_URL}/items/msgs?filter[chat_session_msgs][_eq]=${sessionId}&sort=date_created`,
+        `${DIRECTUS_URL}/items/msgs?filter[chat_session_msgs][_eq]=${session_id}&sort=date_created`,
         {
           headers: { "Content-Type": "application/json" },
           withCredentials: true,
         }
       );
-
       setMessages(response.data.data || []);
 
       // If no messages exist, add initial bot messages
       if (!response.data.data || response.data.data.length === 0) {
-        await sendInitialMessages(sessionId);
+        await sendInitialMessages(session_id);
       }
     } catch (error) {
       console.error("Error loading messages:", error);
       // Add initial messages if loading fails
-      await sendInitialMessages(sessionId);
+      await sendInitialMessages(session_id);
     }
   };
 
   // Send initial bot messages
-  const sendInitialMessages = async (sessionId: string) => {
+  const sendInitialMessages = async (session_id: string) => {
     const initialMessages = [
       {
         msg_content:
           "Hello! I'm your AI Triage Assistant. I'll help you assess this patient's condition. Let's start with basic information.",
-        msg_type: "bot" as const,
-        chat_session_msgs: sessionId,
+        msg_type: "ai_response" as const,
+        chat_session_msgs: session_id,
       },
       {
         msg_content: "Could you please provide the patient's age and gender?",
-        msg_type: "bot" as const,
-        chat_session_msgs: sessionId,
+        msg_type: "ai_response" as const,
+        chat_session_msgs: session_id,
       },
     ];
 
@@ -203,7 +208,6 @@ export default function Page({ params }: PageProps) {
 
         // Split the route ID to extract patient_id and doctor_id
         const ids = routeId.split("-");
-
         if (ids.length < 8) {
           throw new Error("Invalid route format");
         }
@@ -230,14 +234,15 @@ export default function Page({ params }: PageProps) {
 
         const sessionInfo = response.data.data || response.data;
         setSessionData(sessionInfo);
-
-        const sessionId = sessionInfo.id || sessionInfo.sessionId;
         console.log("Session created successfully:", sessionInfo);
 
         // Initialize WebSocket and load messages
-        if (sessionId) {
-          await loadExistingMessages(sessionId);
-          initializeWebSocket(sessionId);
+        if (sessionInfo) {
+          const sessionId = sessionInfo.id || sessionInfo.session_id;
+          if (sessionId) {
+            await loadExistingMessages(sessionId);
+            initializeWebSocket(sessionId);
+          }
         }
       } catch (error) {
         console.error("Error creating session:", error);
@@ -262,14 +267,14 @@ export default function Page({ params }: PageProps) {
   // Send message to Directus
   const sendMessageToDirectus = async (
     content: string,
-    type: "user" | "bot"
+    type: "user_prompt" | "ai_response"
   ) => {
-    if (!sessionData?.id && !sessionData?.sessionId) {
+    if (!sessionData?.id && !sessionData?.session_id) {
       console.error("No session ID available");
       return;
     }
 
-    const sessionId = sessionData.id || sessionData.sessionId;
+    const session_id = sessionData.id || sessionData.session_id;
 
     try {
       const response = await axios.post(
@@ -277,14 +282,13 @@ export default function Page({ params }: PageProps) {
         {
           msg_content: content,
           msg_type: type,
-          chat_session_msgs: sessionId,
+          chat_session_msgs: session_id,
         },
         {
           headers: { "Content-Type": "application/json" },
           withCredentials: true,
         }
       );
-
       console.log("Message sent successfully:", response.data);
       return response.data.data;
     } catch (error) {
@@ -302,13 +306,13 @@ export default function Page({ params }: PageProps) {
 
     try {
       // Send user message
-      await sendMessageToDirectus(currentInput, "user");
+      await sendMessageToDirectus(currentInput, "user_prompt");
 
       // Simulate AI processing time
       setTimeout(async () => {
         try {
           const aiResponse = generateAIResponse(currentInput);
-          await sendMessageToDirectus(aiResponse, "bot");
+          await sendMessageToDirectus(aiResponse, "ai_response");
         } catch (error) {
           console.error("Error sending AI response:", error);
         }
@@ -331,6 +335,7 @@ export default function Page({ params }: PageProps) {
       "I'm analyzing the information provided. Let me assess the risk level and provide recommendations.",
       "Based on the assessment: **Risk Level: MODERATE**\n\n**Possible Diagnoses:**\n- Respiratory infection\n- Cardiac evaluation needed\n\n**Immediate Actions:**\n- Monitor vital signs every 15 minutes\n- Order chest X-ray\n- Consider ECG if chest symptoms persist",
     ];
+
     return (
       responses[Math.floor(Math.random() * responses.length)] ||
       "I'm sorry, I don't understand. Please try again."
@@ -456,18 +461,16 @@ export default function Page({ params }: PageProps) {
           </div>
           <div className="ml-auto flex items-center space-x-2">
             <div
-              className={`px-3 py-1 rounded-full ${
-                isConnected
-                  ? "bg-green-100 dark:bg-green-900/50"
-                  : "bg-red-100 dark:bg-red-900/50"
-              }`}
+              className={`px-3 py-1 rounded-full ${isConnected
+                ? "bg-green-100 dark:bg-green-900/50"
+                : "bg-red-100 dark:bg-red-900/50"
+                }`}
             >
               <span
-                className={`text-sm font-medium ${
-                  isConnected
-                    ? "text-green-800 dark:text-green-300"
-                    : "text-red-800 dark:text-red-300"
-                }`}
+                className={`text-sm font-medium ${isConnected
+                  ? "text-green-800 dark:text-green-300"
+                  : "text-red-800 dark:text-red-300"
+                  }`}
               >
                 {isConnected ? "Connected" : "Connecting..."}
               </span>
@@ -481,22 +484,20 @@ export default function Page({ params }: PageProps) {
           <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 dark:bg-[#0f172a] transition-colors">
             {messages.map((message: Message) => (
               <div
-                key={message.id}
-                className={`flex items-start space-x-3 ${
-                  message.msg_type === "user"
-                    ? "flex-row-reverse space-x-reverse"
-                    : ""
-                }`}
+                key={message.msg_id}
+                className={`flex items-start space-x-3 ${message.msg_type === "user_prompt"
+                  ? "flex-row-reverse space-x-reverse"
+                  : ""
+                  }`}
               >
                 {/* Avatar */}
                 <div
-                  className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                    message.msg_type === "bot"
-                      ? "bg-blue-100 dark:bg-blue-900/60"
-                      : "bg-gray-100 dark:bg-gray-700"
-                  }`}
+                  className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${message.msg_type === "ai_response"
+                    ? "bg-blue-100 dark:bg-blue-900/60"
+                    : "bg-gray-100 dark:bg-gray-700"
+                    }`}
                 >
-                  {message.msg_type === "bot" ? (
+                  {message.msg_type === "ai_response" ? (
                     <Bot className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                   ) : (
                     <UserCircle className="h-4 w-4 text-gray-600 dark:text-gray-300" />
@@ -505,16 +506,14 @@ export default function Page({ params }: PageProps) {
 
                 {/* Message Content */}
                 <div
-                  className={`max-w-[70%] ${
-                    message.msg_type === "user" ? "text-right" : "text-left"
-                  }`}
+                  className={`max-w-[70%] ${message.msg_type === "user_prompt" ? "text-right" : "text-left"
+                    }`}
                 >
                   <div
-                    className={`rounded-lg px-4 py-2 transition-colors ${
-                      message.msg_type === "bot"
-                        ? "bg-white dark:bg-[#1e293b] text-gray-900 dark:text-gray-100 shadow-sm dark:shadow-gray-900/20"
-                        : "bg-blue-600 dark:bg-blue-700 text-white dark:text-blue-50"
-                    }`}
+                    className={`rounded-lg px-4 py-2 transition-colors ${message.msg_type === "ai_response"
+                      ? "bg-white dark:bg-[#1e293b] text-gray-900 dark:text-gray-100 shadow-sm dark:shadow-gray-900/20"
+                      : "bg-blue-600 dark:bg-blue-700 text-white dark:text-blue-50"
+                      }`}
                   >
                     <p className="text-sm whitespace-pre-wrap">
                       {message.msg_content}
