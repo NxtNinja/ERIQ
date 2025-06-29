@@ -19,10 +19,15 @@ interface Patient {
   age: number;
 }
 
+interface User {
+  id: string;
+  // you can add other fields if needed like name, email, etc.
+}
+
 export default function Page() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentUser, setCurrentUser] = useState();
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [open, setOpen] = useState(false);
@@ -88,7 +93,7 @@ export default function Page() {
 
       setNewPatient({ name: "", age: "" });
       setOpen(false);
-      fetchPatients(); // reload list
+      fetchPatients();
     } catch (error: any) {
       const message =
         error.response?.data?.errors?.[0]?.message || "Failed to add patient.";
@@ -136,7 +141,7 @@ export default function Page() {
           </Dialog>
         </div>
 
-        {/* Loading or Error */}
+        {/* Loading, Error, or Data */}
         {loading ? (
           <p className="text-center text-gray-500">Loading patients…</p>
         ) : error ? (
@@ -154,9 +159,9 @@ export default function Page() {
           </div>
         ) : (
           <div className="grid grid-cols-1 place-items-center md:grid-cols-4 gap-5">
-            {patients.map((patient: any) => (
+            {patients.map((patient) => (
               <PatientCard
-                key={patient.patient_id}
+                key={patient.id}
                 patient={patient}
                 doctorId={currentUser?.id}
               />
