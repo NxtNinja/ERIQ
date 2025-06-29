@@ -21,7 +21,6 @@ interface Patient {
 
 interface User {
   id: string;
-  // you can add other fields if needed like name, email, etc.
 }
 
 export default function Page() {
@@ -141,7 +140,6 @@ export default function Page() {
           </Dialog>
         </div>
 
-        {/* Loading, Error, or Data */}
         {loading ? (
           <p className="text-center text-gray-500">Loading patients…</p>
         ) : error ? (
@@ -159,11 +157,11 @@ export default function Page() {
           </div>
         ) : (
           <div className="grid grid-cols-1 place-items-center md:grid-cols-4 gap-5">
-            {patients.map((patient) => (
+            {patients.map((patient: any) => (
               <PatientCard
                 key={patient.id}
                 patient={patient}
-                doctorId={currentUser?.id}
+                doctorId={currentUser?.id || ""}
               />
             ))}
           </div>
