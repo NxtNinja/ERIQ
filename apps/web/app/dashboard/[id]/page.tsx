@@ -60,6 +60,7 @@ export default function Page({ params }: PageProps) {
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [patientName, setPatientName] = useState<string>("");
 
   // Scroll to bottom when new messages arrive
   const scrollToBottom = () => {
@@ -221,7 +222,7 @@ export default function Page({ params }: PageProps) {
 
         // Create session with the API
         const response = await axios.post(
-          `${DIRECTUS_URL}/items/chat_session`,
+          `${DIRECTUS_URL}/items/chat_session?fields=*,doctor_chat_session.*,patient_chat_session.*,patient_chat_session.chat_sessions.*`,
           {
             doctor_chat_session: doctorUUID,
             patient_chat_session: patientUUID,
@@ -231,6 +232,10 @@ export default function Page({ params }: PageProps) {
             withCredentials: true,
           }
         );
+
+        console.log("Session creation response:", response.data);
+
+        setPatientName(response.data.data?.patient_chat_session?.name || "");
 
         const sessionInfo = response.data.data || response.data;
         setSessionData(sessionInfo);
@@ -256,13 +261,13 @@ export default function Page({ params }: PageProps) {
 
     initializeSession();
 
-    // Cleanup WebSocket on unmount
     return () => {
       if (wsRef.current) {
         wsRef.current.close();
       }
     };
-  }, [params]);
+  }, []); // Empty dependency array ensures this runs only once
+    
 
   // Send message to Directus
   const sendMessageToDirectus = async (
@@ -447,7 +452,7 @@ export default function Page({ params }: PageProps) {
             </div>
             <div>
               <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                Priyangsu Banik
+                {patientName || "Patient Assessment"}
               </h1>
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 Patient Assessment in Progress
