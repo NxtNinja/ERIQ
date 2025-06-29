@@ -81,10 +81,12 @@ export default function Page({ params }: PageProps) {
       ws.onopen = () => {
         console.log("WebSocket open");
         setIsConnected(true);
-        ws.send(JSON.stringify({
-          type: 'auth',
-          access_token: "5Z0uTo5c3CysEUcHPzgpCy-qpgvxhxNG"
-        }));
+        ws.send(
+          JSON.stringify({
+            type: "auth",
+            access_token: "5Z0uTo5c3CysEUcHPzgpCy-qpgvxhxNG",
+          })
+        );
 
         // Subscribe to the msgs collection for this session
         ws.send(
@@ -127,9 +129,9 @@ export default function Page({ params }: PageProps) {
           if (data.type === "subscription" && data.event === "create") {
             // New message created
             const newMessage = data.data[0];
-            setMessages((prev) => {
+            setMessages((prev: any) => {
               // Avoid duplicates
-              if (prev.some((msg) => msg.msg_id === newMessage.msg_id)) {
+              if (prev.some((msg: any) => msg.msg_id === newMessage.msg_id)) {
                 return prev;
               }
               return [...prev, newMessage].sort(
@@ -267,7 +269,6 @@ export default function Page({ params }: PageProps) {
       }
     };
   }, []); // Empty dependency array ensures this runs only once
-    
 
   // Send message to Directus
   const sendMessageToDirectus = async (
@@ -466,16 +467,18 @@ export default function Page({ params }: PageProps) {
           </div>
           <div className="ml-auto flex items-center space-x-2">
             <div
-              className={`px-3 py-1 rounded-full ${isConnected
-                ? "bg-green-100 dark:bg-green-900/50"
-                : "bg-red-100 dark:bg-red-900/50"
-                }`}
+              className={`px-3 py-1 rounded-full ${
+                isConnected
+                  ? "bg-green-100 dark:bg-green-900/50"
+                  : "bg-red-100 dark:bg-red-900/50"
+              }`}
             >
               <span
-                className={`text-sm font-medium ${isConnected
-                  ? "text-green-800 dark:text-green-300"
-                  : "text-red-800 dark:text-red-300"
-                  }`}
+                className={`text-sm font-medium ${
+                  isConnected
+                    ? "text-green-800 dark:text-green-300"
+                    : "text-red-800 dark:text-red-300"
+                }`}
               >
                 {isConnected ? "Connected" : "Connecting..."}
               </span>
@@ -490,17 +493,19 @@ export default function Page({ params }: PageProps) {
             {messages.map((message: Message) => (
               <div
                 key={message.msg_id}
-                className={`flex items-start space-x-3 ${message.msg_type === "user_prompt"
-                  ? "flex-row-reverse space-x-reverse"
-                  : ""
-                  }`}
+                className={`flex items-start space-x-3 ${
+                  message.msg_type === "user_prompt"
+                    ? "flex-row-reverse space-x-reverse"
+                    : ""
+                }`}
               >
                 {/* Avatar */}
                 <div
-                  className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${message.msg_type === "ai_response"
-                    ? "bg-blue-100 dark:bg-blue-900/60"
-                    : "bg-gray-100 dark:bg-gray-700"
-                    }`}
+                  className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                    message.msg_type === "ai_response"
+                      ? "bg-blue-100 dark:bg-blue-900/60"
+                      : "bg-gray-100 dark:bg-gray-700"
+                  }`}
                 >
                   {message.msg_type === "ai_response" ? (
                     <Bot className="h-4 w-4 text-blue-600 dark:text-blue-400" />
@@ -511,14 +516,18 @@ export default function Page({ params }: PageProps) {
 
                 {/* Message Content */}
                 <div
-                  className={`max-w-[70%] ${message.msg_type === "user_prompt" ? "text-right" : "text-left"
-                    }`}
+                  className={`max-w-[70%] ${
+                    message.msg_type === "user_prompt"
+                      ? "text-right"
+                      : "text-left"
+                  }`}
                 >
                   <div
-                    className={`rounded-lg px-4 py-2 transition-colors ${message.msg_type === "ai_response"
-                      ? "bg-white dark:bg-[#1e293b] text-gray-900 dark:text-gray-100 shadow-sm dark:shadow-gray-900/20"
-                      : "bg-blue-600 dark:bg-blue-700 text-white dark:text-blue-50"
-                      }`}
+                    className={`rounded-lg px-4 py-2 transition-colors ${
+                      message.msg_type === "ai_response"
+                        ? "bg-white dark:bg-[#1e293b] text-gray-900 dark:text-gray-100 shadow-sm dark:shadow-gray-900/20"
+                        : "bg-blue-600 dark:bg-blue-700 text-white dark:text-blue-50"
+                    }`}
                   >
                     <p className="text-sm whitespace-pre-wrap">
                       {message.msg_content}
